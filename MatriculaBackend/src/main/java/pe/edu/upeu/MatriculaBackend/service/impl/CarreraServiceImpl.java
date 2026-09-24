@@ -6,38 +6,37 @@ import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upeu.MatriculaBackend.dto.CarreraRequestDTO;
 import pe.edu.upeu.MatriculaBackend.dto.CarreraResponseDTO;
 import pe.edu.upeu.MatriculaBackend.entity.Carrera;
-import pe.edu.upeu.MatriculaBackend.exception.RecursoNoEncontradoException;
 import pe.edu.upeu.MatriculaBackend.exception.ReglaNegocioException;
+import pe.edu.upeu.MatriculaBackend.exception.RecursoNoEncontradoException;
 import pe.edu.upeu.MatriculaBackend.repository.CarreraRepository;
-import pe.edu.upeu.MatriculaBackend.repository.CursoRepository;
 import pe.edu.upeu.MatriculaBackend.service.service.CarreraService;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class CarreraServiceImpl implements CarreraService {
 
     private final CarreraRepository carreraRepository;
-    private final CursoRepository cursoRepository;
 
     @Override
     @Transactional
     public CarreraResponseDTO create(CarreraRequestDTO dto) {
-        // RF-02: Nombre único sin distinguir mayúsculas ni espacios
-        String nombreLimpio = dto.getNombre().trim();
+        // Limpiar espacios en blanco al inicio y al final
+        String nombreLimpio = dto.getNombre() != null ? dto.getNombre().trim() : "";
+
+        // Validar si la carrera ya existe (case-insensitive)
         if (carreraRepository.existsByNombreIgnoreCase(nombreLimpio)) {
-            throw new ReglaNegocioException("Ya existe una carrera registrada con el nombre: " + nombreLimpio);
+            throw new ReglaNegocioException("La carrera con el nombre '" + nombreLimpio + "' ya existe.");
         }
 
-        Carrera carrera = Carrera.builder()
-                .nombre(nombreLimpio)
-                .descripcion(dto.getDescripcion())
-                .estado(dto.getEstado())
-                .build();
+        Carrera carrera = new Carrera();
+        carrera.setNombre(nombreLimpio);
+        carrera.setDescripcion(dto.getDescripcion());
+        carrera.setEstado(dto.getEstado() != null ? dto.getEstado() : true);
 
-        return mapearADTO(carreraRepository.save(carrera));
+        Carrera saved = carreraRepository.save(carrera);
+        return mapToDTO(saved);
     }
 
     @Override
@@ -46,16 +45,17 @@ public class CarreraServiceImpl implements CarreraService {
         Carrera carrera = carreraRepository.findById(id)
                 .orElseThrow(() -> new RecursoNoEncontradoException("Carrera no encontrada con id: " + id));
 
-        String nombreLimpio = dto.getNombre().trim();
-        if (carreraRepository.existsByNombreIgnoreCaseAndIdNot(nombreLimpio, id)) {
-            throw new ReglaNegocioException("Ya existe otra carrera registrada con el nombre: " + nombreLimpio);
+        String nombreLimpio = dto.getNombre() != null ? dto.getNombre().trim() : "";
+
+        if (!carrera.getNombre().equalsIgnoreCase(nombreLimpio) && carreraRepository.existsByNombreIgnoreCase(nombreLimpio)) {
+            throw new ReglaNegocioException("La carrera con el nombre '" + nombreLimpio + "' ya existe.");
         }
 
         carrera.setNombre(nombreLimpio);
         carrera.setDescripcion(dto.getDescripcion());
         carrera.setEstado(dto.getEstado());
 
-        return mapearADTO(carreraRepository.save(carrera));
+        return mapToDTO(carreraRepository.save(carrera));
     }
 
     @Override
@@ -63,7 +63,13 @@ public class CarreraServiceImpl implements CarreraService {
     public CarreraResponseDTO read(Long id) {
         Carrera carrera = carreraRepository.findById(id)
                 .orElseThrow(() -> new RecursoNoEncontradoException("Carrera no encontrada con id: " + id));
-        return mapearADTO(carrera);
+        return mapToDTO(carrera);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CarreraResponseDTO> readAll() {
+        return carreraRepository.findAll().stream().map(this::mapToDTO).toList();
     }
 
     @Override
@@ -72,29 +78,17 @@ public class CarreraServiceImpl implements CarreraService {
         if (!carreraRepository.existsById(id)) {
             throw new RecursoNoEncontradoException("Carrera no encontrada con id: " + id);
         }
-        // Validar asociación con cursos para responder 409
-        if (cursoRepository.existsByCarreraId(id)) {
-            throw new ReglaNegocioException("No se puede eliminar la carrera porque tiene cursos asociados.");
-        }
         carreraRepository.deleteById(id);
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public List<CarreraResponseDTO> readAll() {
-        return carreraRepository.findAll().stream()
-                .map(this::mapearADTO)
-                .collect(Collectors.toList());
-    }
-
-    private CarreraResponseDTO mapearADTO(Carrera c) {
-        return CarreraResponseDTO.builder()
-                .id(c.getId())
-                .nombre(c.getNombre())
-                .descripcion(c.getDescripcion())
-                .estado(c.getEstado())
-                .fechaCreacion(c.getFechaCreacion())
-                .fechaModificacion(c.getFechaModificacion())
-                .build();
+    private CarreraResponseDTO mapToDTO(Carrera carrera) {
+        CarreraResponseDTO dto = new CarreraResponseDTO();
+        dto.setId(carrera.getId());
+        dto.setNombre(carrera.getNombre());
+        dto.setDescripcion(carrera.getDescripcion());
+        dto.setEstado(carrera.getEstado());
+        dto.setFechaCreacion(carrera.getFechaCreacion());
+        dto.setFechaModificacion(carrera.getFechaModificacion());
+        return dto;
     }
 }
